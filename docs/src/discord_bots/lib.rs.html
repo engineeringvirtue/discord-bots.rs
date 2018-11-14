@@ -520,8 +520,6 @@
 <span id="520">520</span>
 <span id="521">521</span>
 <span id="522">522</span>
-<span id="523">523</span>
-<span id="524">524</span>
 </pre><pre class="rust ">
 <span class="doccomment">/// we don&#39;t know that it works</span>
 <span class="doccomment">///</span>
@@ -533,6 +531,7 @@
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">failure_derive</span>;
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">serde</span>;
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">serde_derive</span>;
+<span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">serde_urlencoded</span>;
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">reqwest</span>;
 
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">fmt</span>;
@@ -566,13 +565,6 @@
             <span class="prelude-val">Err</span>(<span class="ident">StatusError</span>(<span class="ident">status</span>).<span class="ident">into</span>())
         }
     }
-}
-
-<span class="doccomment">/// Converts hashmaps into url parameters</span>
-<span class="kw">fn</span> <span class="ident">hashmap_url_param</span><span class="op">&lt;</span><span class="ident">K</span>: <span class="ident">fmt</span>::<span class="ident">Display</span> <span class="op">+</span> <span class="ident">Eq</span> <span class="op">+</span> <span class="ident">std</span>::<span class="ident">hash</span>::<span class="ident">Hash</span>, <span class="ident">V</span>: <span class="ident">fmt</span>::<span class="ident">Display</span><span class="op">&gt;</span>(<span class="ident">h</span>: <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span><span class="op">&gt;</span>) <span class="op">-&gt;</span> <span class="ident">String</span> {
-    <span class="kw">let</span> <span class="ident">s</span>: <span class="ident">String</span> <span class="op">=</span> <span class="ident">h</span>.<span class="ident">into_iter</span>().<span class="ident">map</span>(<span class="op">|</span>(<span class="ident">k</span>, <span class="ident">v</span>)<span class="op">|</span> <span class="macro">format</span><span class="macro">!</span>(<span class="string">&quot;&amp;{}={}&quot;</span>, <span class="ident">k</span>, <span class="ident">v</span>)).<span class="ident">collect</span>();
-    <span class="kw">let</span> <span class="ident">strim</span>: <span class="ident">String</span> <span class="op">=</span> <span class="ident">s</span>.<span class="ident">chars</span>().<span class="ident">skip</span>(<span class="number">1</span>).<span class="ident">collect</span>();
-    <span class="macro">format</span><span class="macro">!</span>(<span class="string">&quot;?{}&quot;</span>, <span class="ident">strim</span>)
 }
 
 <span class="doccomment">///DBL simple user</span>
@@ -656,7 +648,7 @@
 <span class="doccomment">///</span>
 <span class="doccomment">/// ex. single sharded bot with 10 servers</span>
 <span class="doccomment">/// ```rust</span>
-<span class="doccomment">/// DblClient::new(token).post_stats(PostBotStats::new(ServerCount::Single(10)));</span>
+<span class="doccomment">/// Client::new(token).post_stats(PostBotStats::new(ServerCount::Single(10)));</span>
 <span class="doccomment">/// ```</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Serialize</span>, <span class="ident">Deserialize</span>, <span class="ident">Clone</span>, <span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">PostBotStats</span> {
@@ -837,7 +829,7 @@
 
     <span class="doccomment">/// Get a bot&#39;s widget image url</span>
     <span class="doccomment">/// ``ext`` determines the extension, svg or png</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_widget</span>(<span class="ident">id</span>: <span class="ident">Snowflake</span>, <span class="ident">ext</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>, <span class="ident">customize</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">CustomizeWidget</span><span class="op">&gt;</span>) <span class="op">-&gt;</span> <span class="ident">String</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_widget</span>(<span class="ident">id</span>: <span class="ident">Snowflake</span>, <span class="ident">ext</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>, <span class="ident">customize</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">CustomizeWidget</span><span class="op">&gt;</span>) <span class="op">-&gt;</span> <span class="ident">Res</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">s</span> <span class="op">=</span> <span class="macro">format</span><span class="macro">!</span>(<span class="string">&quot;{}/widget&quot;</span>, <span class="ident">API</span>);
         <span class="kw">let</span> <span class="ident">params</span> <span class="op">=</span> <span class="ident">customize</span>.<span class="ident">map</span>(<span class="op">|</span><span class="ident">x</span><span class="op">|</span> {
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">params</span> <span class="op">=</span> <span class="ident">x</span>.<span class="ident">color_map</span>;
@@ -856,10 +848,10 @@
         <span class="ident">s</span>.<span class="ident">push_str</span>(<span class="kw-2">&amp;</span><span class="macro">format</span><span class="macro">!</span>(<span class="string">&quot;/{}.{}&quot;</span>, <span class="ident">id</span>, <span class="ident">ext</span>));
 
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">p</span>) <span class="op">=</span> <span class="ident">params</span> {
-            <span class="ident">s</span>.<span class="ident">push_str</span>(<span class="kw-2">&amp;</span><span class="ident">hashmap_url_param</span>(<span class="ident">p</span>));
+            <span class="ident">s</span>.<span class="ident">push_str</span>(<span class="kw-2">&amp;</span><span class="macro">format</span><span class="macro">!</span>(<span class="string">&quot;?{}&quot;</span>, <span class="ident">serde_urlencoded</span>::<span class="ident">to_string</span>(<span class="ident">p</span>)<span class="question-mark">?</span>));
         }
 
-        <span class="ident">s</span>
+        <span class="prelude-val">Ok</span>(<span class="ident">s</span>)
     }
 }
 
@@ -1019,7 +1011,7 @@
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">get_widget</span>() {
-        <span class="kw">let</span> <span class="ident">str</span> <span class="op">=</span> <span class="ident">Bot</span>::<span class="ident">get_widget</span>(<span class="number">510114241307607051</span>.<span class="ident">into</span>(), <span class="string">&quot;svg&quot;</span>, <span class="prelude-val">None</span>);
+        <span class="kw">let</span> <span class="ident">str</span> <span class="op">=</span> <span class="ident">Bot</span>::<span class="ident">get_widget</span>(<span class="number">510114241307607051</span>.<span class="ident">into</span>(), <span class="string">&quot;svg&quot;</span>, <span class="prelude-val">None</span>).<span class="ident">unwrap</span>();
         <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">str</span>, <span class="string">&quot;https://discordbots.org/api/widget/510114241307607051.svg&quot;</span>);
     }
 
@@ -1028,8 +1020,12 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">cwig</span> <span class="op">=</span> <span class="ident">CustomizeWidget</span>::<span class="ident">new</span>().<span class="ident">no_avatar</span>();
         <span class="ident">cwig</span>.<span class="ident">certified_color</span>(<span class="string">&quot;000000&quot;</span>);
 
-        <span class="kw">let</span> <span class="ident">str</span> <span class="op">=</span> <span class="ident">Bot</span>::<span class="ident">get_widget</span>(<span class="number">510114241307607051</span>.<span class="ident">into</span>(), <span class="string">&quot;svg&quot;</span>, <span class="prelude-val">Some</span>(<span class="ident">cwig</span>));
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">str</span>, <span class="string">&quot;https://discordbots.org/api/widget/510114241307607051.svg?certifiedcolor=000000&amp;noavatar=true&quot;</span>);
+        <span class="kw">let</span> <span class="ident">s</span> <span class="op">=</span> <span class="ident">Bot</span>::<span class="ident">get_widget</span>(<span class="number">510114241307607051</span>.<span class="ident">into</span>(), <span class="string">&quot;svg&quot;</span>, <span class="prelude-val">Some</span>(<span class="ident">cwig</span>)).<span class="ident">unwrap</span>();
+
+        <span class="kw">let</span> <span class="ident">out</span> <span class="op">=</span> [<span class="string">&quot;https://discordbots.org/api/widget/510114241307607051.svg?certifiedcolor=000000&amp;noavatar=true&quot;</span>.<span class="ident">to_owned</span>(),
+            <span class="string">&quot;https://discordbots.org/api/widget/510114241307607051.svg?noavatar=true&amp;certifiedcolor=000000&quot;</span>.<span class="ident">to_owned</span>()];
+
+        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="bool-val">true</span>, <span class="ident">out</span>.<span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="ident">s</span>));
     }
 
     <span class="doccomment">/// i know these arent good things to test</span>

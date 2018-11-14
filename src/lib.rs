@@ -8,6 +8,7 @@ extern crate failure;
 extern crate failure_derive;
 extern crate serde;
 extern crate serde_derive;
+extern crate serde_urlencoded;
 extern crate reqwest;
 
 use std::fmt;
@@ -41,13 +42,6 @@ impl StatusError {
             Err(StatusError(status).into())
         }
     }
-}
-
-/// Converts hashmaps into url parameters
-fn hashmap_url_param<K: fmt::Display + Eq + std::hash::Hash, V: fmt::Display>(h: HashMap<K, V>) -> String {
-    let s: String = h.into_iter().map(|(k, v)| format!("&{}={}", k, v)).collect();
-    let strim: String = s.chars().skip(1).collect();
-    format!("?{}", strim)
 }
 
 ///DBL simple user
@@ -131,7 +125,7 @@ pub enum ServerCount {
 ///
 /// ex. single sharded bot with 10 servers
 /// ```rust
-/// DblClient::new(token).post_stats(PostBotStats::new(ServerCount::Single(10)));
+/// Client::new(token).post_stats(PostBotStats::new(ServerCount::Single(10)));
 /// ```
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PostBotStats {
@@ -312,7 +306,7 @@ impl Bot {
 
     /// Get a bot's widget image url
     /// ``ext`` determines the extension, svg or png
-    pub fn get_widget(id: Snowflake, ext: &str, customize: Option<CustomizeWidget>) -> String {
+    pub fn get_widget(id: Snowflake, ext: &str, customize: Option<CustomizeWidget>) -> Res<String> {
         let mut s = format!("{}/widget", API);
         let params = customize.map(|x| {
             let mut params = x.color_map;
@@ -331,10 +325,10 @@ impl Bot {
         s.push_str(&format!("/{}.{}", id, ext));
 
         if let Some(p) = params {
-            s.push_str(&hashmap_url_param(p));
+            s.push_str(&format!("?{}", serde_urlencoded::to_string(p)?));
         }
 
-        s
+        Ok(s)
     }
 }
 
@@ -494,7 +488,7 @@ mod tests {
 
     #[test]
     fn get_widget() {
-        let str = Bot::get_widget(510114241307607051.into(), "svg", None);
+        let str = Bot::get_widget(510114241307607051.into(), "svg", None).unwrap();
         assert_eq!(str, "https://discordbots.org/api/widget/510114241307607051.svg");
     }
 
@@ -503,8 +497,12 @@ mod tests {
         let mut cwig = CustomizeWidget::new().no_avatar();
         cwig.certified_color("000000");
 
-        let str = Bot::get_widget(510114241307607051.into(), "svg", Some(cwig));
-        assert_eq!(str, "https://discordbots.org/api/widget/510114241307607051.svg?certifiedcolor=000000&noavatar=true");
+        let s = Bot::get_widget(510114241307607051.into(), "svg", Some(cwig)).unwrap();
+
+        let out = ["https://discordbots.org/api/widget/510114241307607051.svg?certifiedcolor=000000&noavatar=true".to_owned(),
+            "https://discordbots.org/api/widget/510114241307607051.svg?noavatar=true&certifiedcolor=000000".to_owned()];
+
+        assert_eq!(true, out.contains(&s));
     }
 
     /// i know these arent good things to test
