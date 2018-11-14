@@ -1,2 +1,2 @@
 var ALIASES = {};
-ALIASES['discord_bot_list'] = {};
+ALIASES['discord_bots'] = {};

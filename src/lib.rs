@@ -53,7 +53,7 @@ fn hashmap_url_param<K: fmt::Display + Eq + std::hash::Hash, V: fmt::Display>(h:
 ///DBL simple user
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct DblSimpleUser {
+pub struct SimpleUser {
     pub id: Snowflake,
     pub username: String,
     pub discriminator: String,
@@ -64,9 +64,9 @@ pub struct DblSimpleUser {
 /// Dbl user: https://discordbots.org/api/docs#users
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct DblUser {
+pub struct User {
     #[serde(flatten)]
-    pub user: DblSimpleUser,
+    pub user: SimpleUser,
 
     pub bio: Option<String>,
     pub banner: Option<String>,
@@ -84,9 +84,9 @@ pub struct DblUser {
 /// Dbl bot: https://discordbots.org/api/docs#bots
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct DblBot {
+pub struct Bot {
     #[serde(flatten)]
-    pub user: DblSimpleUser,
+    pub user: SimpleUser,
 
     pub lib: String,
     pub prefix: String,
@@ -109,7 +109,7 @@ pub struct DblBot {
 
 /// Dbl bot stats: https://discordbots.org/api/docs#bots
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct DblBotStats {
+pub struct BotStats {
     #[serde(default)]
     pub server_count: usize,
     pub shards: Vec<usize>,
@@ -159,7 +159,7 @@ impl PostBotStats {
 
 type Res<T> = Result<T, Error>;
 
-impl DblUser {
+impl User {
     pub fn get(id: Snowflake) -> Res<Self> {
         let mut resp = reqwest::get(&format!("{}/users/{}", API, id))?;
         Ok(resp.json()?)
@@ -169,15 +169,15 @@ impl DblUser {
 /// The dbl client
 ///
 /// Used for bot specific functions
-pub struct DblClient {
+pub struct Client {
     pub token: String,
     pub client: reqwest::Client
 }
 
-impl DblClient {
+impl Client {
     /// Initialize a new dbl client from a token: https://discordbots.org/api/docs#reference
     pub fn new(token: &str) -> Self {
-        DblClient {token: token.to_owned(), client: reqwest::Client::new()}
+        Client {token: token.to_owned(), client: reqwest::Client::new()}
     }
 
     fn get<U: reqwest::IntoUrl>(&self, u: U) -> reqwest::RequestBuilder {
@@ -189,7 +189,7 @@ impl DblClient {
     }
 
     /// Get the last 1k votes from your bot
-    pub fn get_votes(&self) -> Res<Vec<DblSimpleUser>> {
+    pub fn get_votes(&self) -> Res<Vec<SimpleUser>> {
         let mut resp = self.get(&format!("{}/bots/votes", API)).send()?;
         Ok(resp.json()?)
     }
@@ -202,12 +202,12 @@ impl DblClient {
     }
 
     /// Get bot info
-    pub fn get_bot(&self) -> Res<DblBot> {
+    pub fn get_bot(&self) -> Res<Bot> {
         Ok(self.get(&format!("{}/bots", API)).send()?.json()?)
     }
 
     /// Get bot stats
-    pub fn get_stats(&self) -> Res<DblBot> {
+    pub fn get_stats(&self) -> Res<Bot> {
         Ok(self.get(&format!("{}/bots/stats", API)).send()?.json()?)
     }
 
@@ -299,14 +299,14 @@ impl CustomizeWidget {
     }
 }
 
-impl DblBot {
+impl Bot {
     /// Get a bots data by its id
     pub fn get(id: Snowflake) -> Res<Self> {
         Ok(reqwest::get(&format!("{}/bots/{}", API, id))?.json()?)
     }
 
     /// Gets a bots stats by id
-    pub fn get_stats(id: Snowflake) -> Res<DblBotStats> {
+    pub fn get_stats(id: Snowflake) -> Res<BotStats> {
         Ok(reqwest::get(&format!("{}/bots/{}/stats", API, id))?.json()?)
     }
 
@@ -391,7 +391,7 @@ pub struct BotListing {
 #[serde(rename_all = "camelCase")]
 #[derive(Deserialize, Clone, Debug)]
 pub struct BotList {
-    pub results: Vec<DblBot>,
+    pub results: Vec<Bot>,
     pub limit: i64,
     pub offset: i64,
     pub count: usize,
@@ -483,18 +483,18 @@ mod tests {
 
     #[test]
     fn get_bot() {
-        let ok = DblBot::get(510114241307607051.into()).unwrap();
+        let ok = Bot::get(510114241307607051.into()).unwrap();
         assert_eq!(ok.user.username, "Skype Bot");
     }
 
     #[test]
     fn get_bot_stats() {
-        DblBot::get_stats(510114241307607051.into()).unwrap();
+        Bot::get_stats(510114241307607051.into()).unwrap();
     }
 
     #[test]
     fn get_widget() {
-        let str = DblBot::get_widget(510114241307607051.into(), "svg", None);
+        let str = Bot::get_widget(510114241307607051.into(), "svg", None);
         assert_eq!(str, "https://discordbots.org/api/widget/510114241307607051.svg");
     }
 
@@ -503,7 +503,7 @@ mod tests {
         let mut cwig = CustomizeWidget::new().no_avatar();
         cwig.certified_color("000000");
 
-        let str = DblBot::get_widget(510114241307607051.into(), "svg", Some(cwig));
+        let str = Bot::get_widget(510114241307607051.into(), "svg", Some(cwig));
         assert_eq!(str, "https://discordbots.org/api/widget/510114241307607051.svg?certifiedcolor=000000&noavatar=true");
     }
 
