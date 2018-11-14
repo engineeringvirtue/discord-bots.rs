@@ -1,3 +1,7 @@
+/// we don't know that it works
+///
+/// we only know it might
+
 extern crate chrono;
 extern crate failure;
 #[macro_use]
