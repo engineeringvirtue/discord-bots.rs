@@ -1,7 +1,13 @@
 [package]
 name = "discord_bots"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Thomas-QM <thomas@engineeringvirtue.net>"]
+readme = "./README.md"
+description = "API bindings for discordbots.org ...Not really tested... yet"
+repository = "https://github.com/engineeringvirtue/discord-bots.rs"
+documentation = "https://engineeringvirtue.github.io/discord-bots.rs/discord_bots/index.html"
+keywords = ["discord", "bots", "list", "api", "bindings"]
+categories = ["api-bindings"]
 
 [dependencies]
 chrono = {version="0.4.6", features=["serde"]}
