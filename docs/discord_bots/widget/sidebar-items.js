@@ -1,1 +1,0 @@
-initSidebarItems({"struct":[["CustomizeWidget","Widget colors: https://discordbots.org/api/docs#widgets"]]});

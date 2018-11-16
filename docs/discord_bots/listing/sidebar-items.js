@@ -1,1 +1,0 @@
-initSidebarItems({"enum":[["BotListingSort","Sorting options for bot listing"]],"struct":[["BotList",""],["BotListing","Bot listing"]]});
