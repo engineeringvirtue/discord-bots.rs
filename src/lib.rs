@@ -7,15 +7,16 @@ extern crate failure;
 #[macro_use]
 extern crate failure_derive;
 extern crate serde;
+#[macro_use]
 extern crate serde_derive;
 extern crate serde_urlencoded;
 extern crate reqwest;
+#[cfg(feature = "webhook")] extern crate iron;
 
 use std::fmt;
 use std::collections::HashMap;
 use chrono::DateTime;
-use serde::{de, de::{Visitor, Deserializer}, Deserialize, ser::{Serializer}};
-use serde_derive::{Serialize, Deserialize};
+use serde::{de, de::{Visitor, Deserializer}, Deserialize};
 use failure::Error;
 
 /// Discord bots API root
@@ -35,7 +36,7 @@ pub struct ParamError;
 pub struct StatusError(reqwest::StatusCode);
 
 impl StatusError {
-    fn with(status: reqwest::StatusCode) -> Res<()> {
+    fn with(status: reqwest::StatusCode) -> Result<()> {
         if status == 200 {
             Ok(())
         } else {
@@ -151,10 +152,10 @@ impl PostBotStats {
     }
 }
 
-type Res<T> = Result<T, Error>;
+type Result<T> = std::result::Result<T, Error>;
 
 impl User {
-    pub fn get(id: Snowflake) -> Res<Self> {
+    pub fn get(id: Snowflake) -> Result<Self> {
         let mut resp = reqwest::get(&format!("{}/users/{}", API, id))?;
         Ok(resp.json()?)
     }
@@ -183,130 +184,214 @@ impl Client {
     }
 
     /// Get the last 1k votes from your bot
-    pub fn get_votes(&self) -> Res<Vec<SimpleUser>> {
+    pub fn get_votes(&self) -> Result<Vec<SimpleUser>> {
         let mut resp = self.get(&format!("{}/bots/votes", API)).send()?;
         Ok(resp.json()?)
     }
 
     /// Check if a user has voted
-    pub fn get_voted(&self, user: Snowflake) -> Res<bool> {
+    pub fn get_voted(&self, user: Snowflake) -> Result<bool> {
         let mut resp = self.get(&format!("{}/bots/check?userId={}", API, user)).send()?;
         let jsp: HashMap<String, i32> = resp.json()?;
         if *jsp.get("voted").ok_or(ParamError)? == 1 { Ok(true) } else { Ok(false) }
     }
 
     /// Get bot info
-    pub fn get_bot(&self) -> Res<Bot> {
+    pub fn get_bot(&self) -> Result<Bot> {
         Ok(self.get(&format!("{}/bots", API)).send()?.json()?)
     }
 
     /// Get bot stats
-    pub fn get_stats(&self) -> Res<Bot> {
+    pub fn get_stats(&self) -> Result<Bot> {
         Ok(self.get(&format!("{}/bots/stats", API)).send()?.json()?)
     }
 
     /// Post bot stats
     ///
     /// Check the docs on PostBotStats for more info
-    pub fn post_stats(&self, pbs: PostBotStats) -> Res<()> {
+    pub fn post_stats(&self, pbs: PostBotStats) -> Result<()> {
         let status = self.post(&format!("{}/bots/stats", API)).json(&pbs).send()?.status();
         StatusError::with(status)
     }
 }
 
-/// Widget colors: https://discordbots.org/api/docs#widgets
-pub struct CustomizeWidget {
-    pub color_map: HashMap<&'static str, String>,
-    pub widget_type: Option<String>,
-    pub no_avatar: bool,
+/// To use this module, make sure to enable the webhook feature.
+#[cfg(feature = "webhook")]
+pub mod webhook {
+    use std::collections::HashMap;
+    use iron::{Handler, Request, Response, IronResult, status};
+    use std::{sync::Mutex, io::Read};
+    use super::{Snowflake};
+
+    /// Webhook vote type
+    /// Should always be upvote unless using the test function
+    #[derive(Serialize, Deserialize, Clone, Debug)]
+    #[serde(rename_all = "camelCase")]
+    pub enum VoteType {
+        Test,
+        Upvote
+    }
+
+    /// A webhook message: https://discordbots.org/api/docs#webhooks
+    #[derive(Serialize, Deserialize, Clone, Debug)]
+    #[serde(rename_all = "camelCase")]
+    pub struct WebHookVote {
+        bot: Snowflake,
+        user: Snowflake,
+        #[serde(rename = "type")]
+        vote_type: VoteType,
+        is_weekend: bool,
+        query: HashMap<String, String>
+    }
+
+    /// The webhook handler trait:
+    ///
+    /// ```rust
+    /// struct MyHandler {
+    ///     votes: i32
+    /// }
+    ///
+    /// impl webhook::WebhookHandler for MyHandler {
+    ///     fn handle(&mut self, whv: webhook::WebHookVote) {
+    ///         self.votes += 1;
+    ///     }
+    /// }
+    ///
+    /// // later:
+    /// mount.mount(webhook::iron_handler(MyHandler {votes: 0}));
+    /// ```
+    pub trait WebhookHandler {
+        fn handle(&mut self, whv: WebHookVote);
+    }
+
+    /// Constructs an iron handler out of a webhook handler
+    pub fn iron_handler<T: 'static + WebhookHandler + Send + Sized>(t: T) -> impl Handler {
+        WHIronHandler {
+            webhook: Mutex::new(t)
+        }
+    }
+
+    struct WHIronHandler<T: WebhookHandler + Sized> {
+        webhook: Mutex<T>
+    }
+
+    impl<T: 'static + WebhookHandler + Send + Sized> Handler for WHIronHandler<T> {
+        fn handle(&self, req: &mut Request) -> IronResult<Response> {
+            let mut buf = Vec::new();
+            let _ = &req.body.read_to_end(&mut buf);
+
+            match serde_json::from_slice(buf.as_slice()).ok() {
+                Some(x) => {
+                    let mut hookhandler = self.webhook.lock().unwrap();
+                    hookhandler.handle(x);
+
+                    Ok(Response::with(status::Ok))
+                },
+                None => {
+                    Ok(Response::with(status::InternalServerError))
+                }
+            }
+        }
+    }
 }
 
-//skip this
-//
-//
-//no, skip it
-//SKIP IT
-impl CustomizeWidget {
-    /// Makes a new CustomizeWidget
-    /// When setting colors, make sure not to include the hash
-    pub fn new() -> Self {
-        CustomizeWidget {color_map: HashMap::new(), widget_type: None, no_avatar: false}
+pub mod widget {
+    use std::collections::HashMap;
+
+    /// Widget colors: https://discordbots.org/api/docs#widgets
+    pub struct CustomizeWidget {
+        pub color_map: HashMap<&'static str, String>,
+        pub widget_type: Option<String>,
+        pub no_avatar: bool,
     }
 
-    /// Either owner, status, upvotes, servers, or lib
-    pub fn widget_type(self, widget_type: String) -> Self {
-        CustomizeWidget {widget_type: Some(widget_type), ..self}
-    }
+    //skip this
+    //
+    //
+    //no, skip it
+    //SKIP IT
+    impl CustomizeWidget {
+        /// Makes a new CustomizeWidget
+        /// When setting colors, make sure not to include the hash
+        pub fn new() -> Self {
+            CustomizeWidget { color_map: HashMap::new(), widget_type: None, no_avatar: false }
+        }
 
-    pub fn no_avatar(self) -> Self {
-        CustomizeWidget {no_avatar: true, ..self}
-    }
+        /// Either owner, status, upvotes, servers, or lib
+        pub fn widget_type(self, widget_type: String) -> Self {
+            CustomizeWidget { widget_type: Some(widget_type), ..self }
+        }
 
-    //TODO: use some other way
+        pub fn no_avatar(self) -> Self {
+            CustomizeWidget { no_avatar: true, ..self }
+        }
 
-    pub fn top_color (&mut self, top_color: &str) {
-        self.color_map.insert("topcolor", top_color.to_owned());
-    }
+        //TODO: use some other way
 
-    pub fn middle_color (&mut self, middle_color: &str) {
-        self.color_map.insert("middlecolor", middle_color.to_owned());
-    }
+        pub fn top_color(&mut self, top_color: &str) {
+            self.color_map.insert("topcolor", top_color.to_owned());
+        }
 
-    pub fn username_color (&mut self, username_color: &str) {
-        self.color_map.insert("usernamecolor", username_color.to_owned());
-    }
+        pub fn middle_color(&mut self, middle_color: &str) {
+            self.color_map.insert("middlecolor", middle_color.to_owned());
+        }
 
-    pub fn certified_color (&mut self, certified_color: &str) {
-        self.color_map.insert("certifiedcolor", certified_color.to_owned());
-    }
+        pub fn username_color(&mut self, username_color: &str) {
+            self.color_map.insert("usernamecolor", username_color.to_owned());
+        }
 
-    pub fn data_color (&mut self, data_color: &str) {
-        self.color_map.insert("datacolor", data_color.to_owned());
-    }
+        pub fn certified_color(&mut self, certified_color: &str) {
+            self.color_map.insert("certifiedcolor", certified_color.to_owned());
+        }
 
-    pub fn label_color (&mut self, label_color: &str) {
-        self.color_map.insert("labelcolor", label_color.to_owned());
-    }
+        pub fn data_color(&mut self, data_color: &str) {
+            self.color_map.insert("datacolor", data_color.to_owned());
+        }
 
-    pub fn highlight_color (&mut self, highlight_color: &str) {
-        self.color_map.insert("highlightcolor", highlight_color.to_owned());
-    }
+        pub fn label_color(&mut self, label_color: &str) {
+            self.color_map.insert("labelcolor", label_color.to_owned());
+        }
 
-    pub fn avatar_bg (&mut self, avatar_bg: &str) {
-        self.color_map.insert("avatarbg", avatar_bg.to_owned());
-    }
+        pub fn highlight_color(&mut self, highlight_color: &str) {
+            self.color_map.insert("highlightcolor", highlight_color.to_owned());
+        }
 
-    pub fn left_color (&mut self, left_color: &str) {
-        self.color_map.insert("leftcolor", left_color.to_owned());
-    }
+        pub fn avatar_bg(&mut self, avatar_bg: &str) {
+            self.color_map.insert("avatarbg", avatar_bg.to_owned());
+        }
 
-    pub fn right_color (&mut self, right_color: &str) {
-        self.color_map.insert("rightcolor", right_color.to_owned());
-    }
+        pub fn left_color(&mut self, left_color: &str) {
+            self.color_map.insert("leftcolor", left_color.to_owned());
+        }
 
-    pub fn left_text_color (&mut self, left_text_color: &str) {
-        self.color_map.insert("lefttextcolor", left_text_color.to_owned());
-    }
+        pub fn right_color(&mut self, right_color: &str) {
+            self.color_map.insert("rightcolor", right_color.to_owned());
+        }
 
-    pub fn right_text_color (&mut self, right_text_color: &str) {
-        self.color_map.insert("righttextcolor", right_text_color.to_owned());
+        pub fn left_text_color(&mut self, left_text_color: &str) {
+            self.color_map.insert("lefttextcolor", left_text_color.to_owned());
+        }
+
+        pub fn right_text_color(&mut self, right_text_color: &str) {
+            self.color_map.insert("righttextcolor", right_text_color.to_owned());
+        }
     }
 }
 
 impl Bot {
     /// Get a bots data by its id
-    pub fn get(id: Snowflake) -> Res<Self> {
+    pub fn get(id: Snowflake) -> Result<Self> {
         Ok(reqwest::get(&format!("{}/bots/{}", API, id))?.json()?)
     }
 
     /// Gets a bots stats by id
-    pub fn get_stats(id: Snowflake) -> Res<BotStats> {
+    pub fn get_stats(id: Snowflake) -> Result<BotStats> {
         Ok(reqwest::get(&format!("{}/bots/{}/stats", API, id))?.json()?)
     }
 
     /// Get a bot's widget image url
     /// ``ext`` determines the extension, svg or png
-    pub fn get_widget(id: Snowflake, ext: &str, customize: Option<CustomizeWidget>) -> Res<String> {
+    pub fn get_widget(id: Snowflake, ext: &str, customize: Option<widget::CustomizeWidget>) -> Result<String> {
         let mut s = format!("{}/widget", API);
         let params = customize.map(|x| {
             let mut params = x.color_map;
@@ -332,97 +417,104 @@ impl Bot {
     }
 }
 
-/// Sorting options for bot listing
-///
-/// To reverse, use .reverse instead of wrapping
-#[derive(Clone, Debug)]
-pub enum BotListingSort {
-    Points,
-    MonthlyPoints,
-    Date,
-    ServerCount,
-    Reverse(Box<BotListingSort>)
-}
+pub mod listing {
+    use super::*;
 
-impl BotListingSort {
-    /// Reverses the sorting order
-    pub fn reverse(self) -> Self {
-        match self {
-            BotListingSort::Reverse(x) => *x,
-            x => BotListingSort::Reverse(Box::new(x))
+    /// Sorting options for bot listing
+    ///
+    /// To reverse, use .reverse instead of wrapping
+    #[derive(Clone, Debug)]
+    pub enum BotListingSort {
+        Points,
+        MonthlyPoints,
+        Date,
+        ServerCount,
+        Reverse(Box<BotListingSort>)
+    }
+
+    impl BotListingSort {
+        /// Reverses the sorting order
+        pub fn reverse(self) -> Self {
+            match self {
+                BotListingSort::Reverse(x) => *x,
+                x => BotListingSort::Reverse(Box::new(x))
+            }
         }
     }
-}
 
-impl ToString for BotListingSort {
-    fn to_string(&self) -> String {
-        match &self {
-            BotListingSort::Points => "points".to_owned(), BotListingSort::MonthlyPoints => "monthly_points".to_owned(),
-            BotListingSort::Date => "date".to_owned(), BotListingSort::ServerCount => "server_count".to_owned(),
-            BotListingSort::Reverse(bls) => format!("-{}", bls.to_string())
+    impl ToString for BotListingSort {
+        fn to_string(&self) -> String {
+            match &self {
+                BotListingSort::Points => "points".to_owned(),
+                BotListingSort::MonthlyPoints => "monthly_points".to_owned(),
+                BotListingSort::Date => "date".to_owned(),
+                BotListingSort::ServerCount => "server_count".to_owned(),
+                BotListingSort::Reverse(bls) => format!("-{}", bls.to_string())
+            }
         }
     }
-}
 
-fn serialize_botsort<S>(bls: &BotListingSort, s: S) -> Result<S::Ok, S::Error> where S: Serializer {
-    s.collect_str(&bls.to_string())
-}
-
-/// Bot listing
-///
-/// You can use this to search through dbl's bots
-#[serde(rename_all = "camelCase")]
-#[derive(Serialize, Clone, Debug)]
-pub struct BotListing {
-    pub limit: i64,
-    pub offset: i64,
-    pub search: String,
-    #[serde(serialize_with = "serialize_botsort")]
-    pub sort: BotListingSort,
-    pub fields: String
-}
-
-#[serde(rename_all = "camelCase")]
-#[derive(Deserialize, Clone, Debug)]
-pub struct BotList {
-    pub results: Vec<Bot>,
-    pub limit: i64,
-    pub offset: i64,
-    pub count: usize,
-    pub total: usize
-}
-
-impl BotListing {
-    pub fn new() -> Self {
-        BotListing {limit: 50, offset: 0, search: "".to_owned(), sort: BotListingSort::Points, fields: "".to_owned()}
+    use serde::ser::Serializer;
+    fn serialize_botsort<S>(bls: &BotListingSort, s: S) -> std::result::Result<S::Ok, S::Error> where S: Serializer {
+        s.collect_str(&bls.to_string())
     }
 
-    pub fn search(self, search: String) -> Self {
-        BotListing {search, ..self}
+    /// Bot listing
+    ///
+    /// You can use this to search through dbl's bots
+    #[derive(Serialize, Clone, Debug)]
+    #[serde(rename_all = "camelCase")]
+    pub struct BotListing {
+        pub limit: i64,
+        pub offset: i64,
+        pub search: String,
+        #[serde(serialize_with = "serialize_botsort")]
+        pub sort: BotListingSort,
+        pub fields: String
     }
 
-    pub fn sort(self, sort: BotListingSort) -> Self {
-        BotListing {sort, ..self}
+    #[derive(Deserialize, Clone, Debug)]
+    #[serde(rename_all = "camelCase")]
+    pub struct BotList {
+        pub results: Vec<super::Bot>,
+        pub limit: i64,
+        pub offset: i64,
+        pub count: usize,
+        pub total: usize
     }
 
-    pub fn limit(self, limit: i64) -> Self {
-        BotListing {limit, ..self}
-    }
+    impl BotListing {
+        pub fn new() -> Self {
+            BotListing { limit: 50, offset: 0, search: "".to_owned(), sort: BotListingSort::Points, fields: "".to_owned() }
+        }
 
-    pub fn offset(self, offset: i64) -> Self {
-        BotListing {offset, ..self}
-    }
+        pub fn search(self, search: String) -> Self {
+            BotListing { search, ..self }
+        }
 
-    pub fn fields(self, fields: &str) -> Self {
-        BotListing {fields: fields.to_owned(), ..self}
-    }
+        pub fn sort(self, sort: BotListingSort) -> Self {
+            BotListing { sort, ..self }
+        }
 
-    /// Execute the BotListing and get the BotList
-    pub fn exec(&self) -> Res<BotList> {
-        let client = reqwest::Client::new();
-        let mut resp = client.get(&format!("{}/bots", API)).query(self).send()?;
+        pub fn limit(self, limit: i64) -> Self {
+            BotListing { limit, ..self }
+        }
 
-        Ok(resp.json()?)
+        pub fn offset(self, offset: i64) -> Self {
+            BotListing { offset, ..self }
+        }
+
+        pub fn fields(self, fields: &str) -> Self {
+            BotListing { fields: fields.to_owned(), ..self }
+        }
+
+        /// Execute the BotListing and get the BotList
+        pub fn exec(&self) -> Result<BotList> {
+            let client = reqwest::Client::new();
+            let mut resp = client.get(&format!("{}/bots", API)).query(self).send()?;
+
+            Ok(resp.json()?)
+        }
     }
 }
 
@@ -453,7 +545,7 @@ impl <'de> Visitor<'de> for SnowflakeVisitor {
         formatter.write_str("a snowflake as a string")
     }
 
-    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E>
         where
             E: de::Error,
     {
@@ -463,7 +555,7 @@ impl <'de> Visitor<'de> for SnowflakeVisitor {
 }
 
 impl<'de> Deserialize<'de> for Snowflake {
-    fn deserialize<D>(deserializer: D) -> Result<Snowflake, D::Error>
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Snowflake, D::Error>
         where
             D: Deserializer<'de>,
     {
@@ -494,6 +586,8 @@ mod tests {
 
     #[test]
     fn customize_widget() {
+        use widget::*;
+
         let mut cwig = CustomizeWidget::new().no_avatar();
         cwig.certified_color("000000");
 
@@ -509,6 +603,8 @@ mod tests {
     /// o well
     #[test]
     fn list_bots() {
+        use listing::*;
+
         let res = BotListing::new().search("shibe".to_owned()).exec().unwrap();
         let uname = &res.results.first().unwrap().user.username;
 

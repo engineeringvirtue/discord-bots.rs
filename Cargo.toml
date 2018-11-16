@@ -1,6 +1,6 @@
 [package]
 name = "discord_bots"
-version = "0.1.1"
+version = "1.0.0"
 authors = ["Thomas-QM <thomas@engineeringvirtue.net>"]
 readme = "./README.md"
 license-file = "./LICENSE"
@@ -18,3 +18,9 @@ serde = "1.0.80"
 serde_derive = "1.0.80"
 serde_urlencoded = "0.5.3"
 reqwest = "0.9.4"
+
+iron = {version = "0.6.0", optional = true}
+serde_json = {version = "1.0.33", optional = true}
+
+[features]
+webhook = ["iron", "serde_json"]
